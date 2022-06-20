@@ -14,13 +14,62 @@ export RUNNER_HOME=/home/ubuntu/actions-runner
 
 export RUNNER_URL="https://github.com/ClickHouse"
 # Funny fact, but metadata service has fixed IP
-INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
+INSTANCE_ID=$(ec2metadata --instance-id)
 export INSTANCE_ID
 
 # combine labels
 RUNNER_TYPE=$(/usr/local/bin/aws ec2 describe-tags --filters "Name=resource-id,Values=$INSTANCE_ID" | jq '.Tags[] | select(."Key" == "github:runner-type") | .Value' -r)
 LABELS="self-hosted,Linux,$(uname -m),$RUNNER_TYPE"
 export LABELS
+
+# Refresh CloudWatch agent config
+aws ssm get-parameter --region us-east-1 --name AmazonCloudWatch-github-runners --query 'Parameter.Value' --output text > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+systemctl restart amazon-cloudwatch-agent.service
+
+
+# Create a pre-run script that will restart docker daemon before the job started
+mkdir -p /tmp/actions-hooks
+cat > /tmp/actions-hooks/pre-run.sh << 'EOF'
+#!/bin/bash
+set -uo pipefail
+
+sudo systemctl restart docker
+
+for i in {1..10}
+do
+  docker info && break || sleep 2
+done
+EOF
+
+cat > /tmp/actions-hooks/post-run.sh << 'EOF'
+#!/bin/bash
+set -uo pipefail
+
+# Free KiB, free percents
+ROOT_STAT=($(df / | awk '/\// {print $4 " " int($3/$2 * 100)}'))
+if [[ ${ROOT_STAT[0]} -lt 3000000 ]] || [[ ${ROOT_STAT[1]} -lt 5 ]]; then
+  echo "Going to terminate the runner, it has ${ROOT_STAT[0]}KiB and ${ROOT_STAT[1]}% of free space on /"
+  INSTANCE_ID=$(ec2metadata --instance-id)
+  ( sleep 10 && aws ec2 terminate-instances --instance-ids "$INSTANCE_ID" ) &
+  exit 0
+fi
+
+sudo systemctl restart docker
+
+for i in {1..10}
+do
+  docker info && break || sleep 2
+done
+
+# shellcheck disable=SC2046
+docker kill $(docker ps -q) ||:
+# shellcheck disable=SC2046
+docker rm -f $(docker ps -a -q) ||:
+EOF
+ACTIONS_RUNNER_HOOK_JOB_STARTED=/tmp/actions-hooks/pre-run.sh
+export ACTIONS_RUNNER_HOOK_JOB_STARTED
+ACTIONS_RUNNER_HOOK_JOB_COMPLETED=/tmp/actions-hooks/post-run.sh
+export ACTIONS_RUNNER_HOOK_JOB_COMPLETED
 
 while true; do
     runner_pid=$(pgrep run.sh)
