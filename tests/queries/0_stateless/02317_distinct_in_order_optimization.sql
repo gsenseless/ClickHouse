@@ -1,14 +1,11 @@
-
 drop table if exists distinct_in_order sync;
 create table distinct_in_order (a int, b int, c int) engine=MergeTree() order by (a, b, c);
-
-select 'disable optimize_distinct_in_order';
-set optimize_distinct_in_order=0;
-select 'pipeline does _not_ contain the optimization';
+select 'distinct pipeline on empty table -> pipeline does not contain the optimization, source is not ReadFromMergeTree';
 explain pipeline select distinct * from distinct_in_order settings max_threads=1;
 
-select 'enable optimize_distinct_in_order';
-set optimize_distinct_in_order=1;
+select 'distinct with all primary key columns -> pipeline contains the optimization';
+insert into distinct_in_order select number % number, number % 10, number % 5 from numbers(1,10);
+explain pipeline select distinct * from distinct_in_order settings max_threads=1;
 select 'distinct with primary key prefix -> pipeline contains the optimization';
 explain pipeline select distinct a, c from distinct_in_order settings max_threads=1;
 select 'distinct with non-primary key prefix -> pipeline does _not_ contain the optimization';

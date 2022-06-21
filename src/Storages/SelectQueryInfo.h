@@ -165,9 +165,6 @@ struct SelectQueryInfoBase
     /// Can be modified while reading from storage
     InputOrderInfoPtr input_order_info;
 
-    ReadInOrderOptimizerForDistinctPtr distinct_optimizer;
-    InputOrderInfoPtr distinct_order_info;
-
     /// Prepared sets are used for indices by storage engine.
     /// Example: x IN (1, 2, 3)
     PreparedSets sets;

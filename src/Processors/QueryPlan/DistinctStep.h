@@ -15,8 +15,7 @@ public:
         const SizeLimits & set_size_limits_,
         UInt64 limit_hint_,
         const Names & columns_,
-        bool pre_distinct_, /// If is enabled, execute distinct for separate streams. Otherwise, merge streams.
-        const InputOrderInfoPtr & distinct_info_);
+        bool pre_distinct_); /// If is enabled, execute distinct for separate streams. Otherwise, merge streams.
 
     String getName() const override { return "Distinct"; }
 
@@ -29,7 +28,6 @@ private:
     SizeLimits set_size_limits;
     UInt64 limit_hint;
     Names columns;
-    InputOrderInfoPtr distinct_info;
     bool pre_distinct;
 };
 
